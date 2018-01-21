@@ -1,5 +1,9 @@
 
 def _run_episode(env, agent, max_steps_per_episode, observers, episode):
+    agent.initialize_episode(episode)
+    for observer in observers:
+        observer.on_begin_episode(episode)
+
     obs = env.reset()
 
     cur_step = 0
@@ -10,7 +14,7 @@ def _run_episode(env, agent, max_steps_per_episode, observers, episode):
         agent.feedback(new_obs, reward, done)
 
         for observer in observers:
-            observer(env, agent, episode, cur_step, obs, action, reward)
+            observer.on_step(obs, action, reward)
 
         obs = new_obs
         cur_step += 1
@@ -20,9 +24,12 @@ def _run_episode(env, agent, max_steps_per_episode, observers, episode):
 
         if max_steps_per_episode is not None and cur_step >= max_steps_per_episode:
             break
+    
+    for observer in observers:
+        observer.on_end_episode()
 
 
 def run_loop(env, agent, num_episodes, max_steps_per_episode=None, observers=[]):
     for episode in range(num_episodes):
-        agent.initialize_episode(episode)
+        
         _run_episode(env, agent, max_steps_per_episode, observers, episode)

@@ -7,47 +7,52 @@ import time
 import run_loop
 import decaying_value
 import ddpg_agent
+import keyboard_agent
 import memory
+import observer
 
 
-TRAIN_EPISODES = 50000
+TRAIN_EPISODES = 2000
 MAX_STEPS_PER_EPISODE = 1000
 
 
-class RewardTracker(object):
-
-    def __init__(self):
-        self._episode_reward = 0.0
-
-    def __call__(self, env, agent, episode, cur_iter, obs, action, reward):
-        self._episode_reward += reward
-
-        if cur_iter == 0:
-            print("agent average reward {}: {}".format(episode, self._episode_reward))
-            self._episode_reward = 0.0
-
-def render_observer(env, agent, episode, cur_iter, obs, action, reward):
-    env.render()
-    time.sleep(0.025)
-
-def _build_observers():
+def _build_observers(env):
     observers = []
-    # observers.append(lambda env, agent, episode, cur_iter, obs, action, reward: )
-    observers.append(RewardTracker())
+    observers.append(observer.RewardTracker())
+    # observers.append(observer.SavingObserver('negative_demos/'))
+    # observers.append(observer.Renderer(env, 20.))
     return observers
 
 
-env = gym.make('Pendulum-v0')
-# env = gym.make('CartPole-v0')
+# env = gym.make('Pendulum-v0')
+env = gym.make('MountainCarContinuous-v0')
+# env = gym.make('LunarLanderContinuous-v2')
+# env = gym.make('CarRacing-v0')
+env.reset()
 
-exploration_rate = decaying_value.DecayingValue(0.5, 0.05, TRAIN_EPISODES)
-beta = decaying_value.DecayingValue(0.4, 1.0, TRAIN_EPISODES)
-memory = memory.Memory(50000, env.observation_space.high.shape, 0.6, beta)
-agent = ddpg_agent.DDPGAgent(env.action_space, env.observation_space, exploration_rate, memory)
-observers = _build_observers()
+print('action space: {}'.format(env.action_space))
+print('act low/high: {} {}'.format(env.action_space.low, env.action_space.high))
+print('obs low/high: {} {}'.format(env.observation_space.low, env.observation_space.high))
+
+observers = _build_observers(env)
+exploration_rate = decaying_value.DecayingValue(0.2, 0.1, TRAIN_EPISODES)
+
+replay_buffer = memory.Memory(100000, env.observation_space.high.shape)
+positive_demos = memory.from_demonstrations('positive_demos/', env.observation_space.high.shape)
+# negative_demos = memory.from_demonstrations('negative_demos/', env.observation_space.high.shape)
+
+agent = ddpg_agent.DDPGAgent(env.action_space, env.observation_space, exploration_rate,
+                             replay_buffer, positive_demos, None)
+
+agent.pretrain_actor(2000)
+agent.pretrain_critic(2000)
+
 
 run_loop.run_loop(env, agent, TRAIN_EPISODES, MAX_STEPS_PER_EPISODE, observers)
 wait = raw_input("Finished Training")
 
 agent.set_learning(False)
-run_loop.run_loop(env, agent, 2, None, [render_observer])
+
+observers.append(observer.Renderer(env, 20.))
+# agent = keyboard_agent.KeyboardAgent(env)
+run_loop.run_loop(env, agent, 10, None, observers)
